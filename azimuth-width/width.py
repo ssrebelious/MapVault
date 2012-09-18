@@ -14,13 +14,14 @@ of the given polygon(s) in the given direction. Corresponding QGIS plugin coming
 Prereqirements:
                 1. You have to have QGIS installed on your machine.
                 2. QGIS have to be in PYTHONPATH. See: http://qgis.org/pyqgis-cookbook/intro.html
-                3. Ensure that command "QgsApplication.setPrefixPath("/usr", True)" at line 323
-                    of this file have valid path ("/usr" - in this case) to QGIS installation.
+                3. If you are non-Windows user ensure that command "QgsApplication.setPrefixPath( qgis_prefix, True)"
+                    of this file have valid path to QGIS installation. If not - modify "qgis_prefix"
+                    to set correct value. It is "/usr" now - must work in 99% of cases.
 
 General usage: copy script to directory with a shh-file containing polygons.
 Using console navigate to the directory. In console type:
-  python ./width.py [file to analyse] [field to store values] [azimuth] [mode] [algorithm] [step]
-  E.G.:~> python ./width.py poly.shp width 285.9 max Mix 1.3
+  python ./width.py [file to analyse] [field to store values] [azimuth (decimal degrees)] [mode ('min' or 'max')] [mode-2 ('abs', or 'rel')] [algorithm ('byStep' or 'byVertex' or 'Mix')] [step (real numver, CRS units; for 'byStep', 'byVertex' and 'Mix' only)]
+  E.G.:~> python ./width.py poly.shp width 285.9 max abs Mix 1.3
 Where: ./width.py - name of this script file
       [file to analyse] - polygonal shp-file
       [field to store values] - if it does not exist it will be created
@@ -28,6 +29,10 @@ Where: ./width.py - name of this script file
       [mode] - type of width to calculate. Currently 'min' (returns minimum width value
                in given direction) and 'max' (returns maximum value in given direction)
                modes are available.
+      [mode-2] - if polygon is not convex it may have several segments in given direction.
+                 If you want to take sum of the segments of the result - use 'abs', if you want
+                 only the longest (shortest) segment - use 'rel'. Note that currently
+                 'byVertex' algorithm will provide incorrect
       [algorithm] - algorithm that will be used: 'byStep', 'byVertex', 'Mix'.
                     "byStep" algorithm will take provided step (shp-file CRS units)
                       and swipe the polygons with it by line. Precision depends on the step.
@@ -81,13 +86,14 @@ web-page:  http://ssrebelious.blogspot.com/2012/09/azimuth-width-script.html
 '''
 
 import sys
+import os
 from qgis.core import *
 import math
 from PyQt4.QtCore import *
 
 
 
-def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode):
+def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2, ):
   '''
   Returns columnl with polygons weights
   '''
@@ -134,7 +140,7 @@ def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode):
     BBox = feat.geometry().boundingBox()
     polygon = feat.geometry()
     f_id = feat.id()
-    fin_width = CalcWidth(BBox, polygon, azimuth, algorithm, step, mode)
+    fin_width = CalcWidth(BBox, polygon, azimuth, algorithm, step, mode, mode2)
 
     # writing maximum width
     if cap & QgsVectorDataProvider.ChangeAttributeValues:
@@ -147,7 +153,7 @@ def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode):
 
 
 #function that will actually calculate width of polygon for given azimuth
-def CalcWidth(BBox, polygon, azimuth, algorithm, step, mode):
+def CalcWidth(BBox, polygon, azimuth, algorithm, step, mode, mode2):
   '''
   Returns width of the given polygon
   '''
@@ -221,7 +227,7 @@ def CalcWidth(BBox, polygon, azimuth, algorithm, step, mode):
         x_new = x_raw + dx
         y_new = y_raw + dy
 
-      current_width = intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode) # see definition below
+      current_width = intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode, mode2) # see definition below
       width_list.append(current_width)
       w = width_list.pop(0) # a workaround caused by issues in comparing "current_width" and "width" directly: I don't want to store list of all widths in RAM
       if mode == 'max':
@@ -257,7 +263,7 @@ def CalcWidth(BBox, polygon, azimuth, algorithm, step, mode):
     while x_init <= x_fin:
       x_new = x_init + dx
       y_new = y_init + dy
-      current_width = intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode) # see definition below
+      current_width = intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode, mode2) # see definition below
       width_list.append(current_width)
       w = width_list.pop(0) # a workaround caused by issues in comparing "current_width" and "width" directly: I don't want to store list of all widths in RAM
       if mode == 'max':
@@ -279,34 +285,36 @@ def CalcWidth(BBox, polygon, azimuth, algorithm, step, mode):
 
   return width
 
-def intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode):
+def intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode, mode2):
   '''
   Returns width of the polygon at given point
   '''
   A = QgsPoint(x_init, y_init)
   B = QgsPoint(x_new, y_new)
   m_line = QgsGeometry.fromPolyline( [ A, B ] ) # measurement line
-  #intersec = m_line.intersection(polygon).asGeometryCollection() # SEE COMMENT BELOW
-  intersec = m_line.intersection(polygon)
-  length = intersec.lengths()
 
-  # THIS PART IS FOR THE TIME WHEN THE ISSUE WITH REDUNDANT MULTIGEOMETRY WILL BE SOLVED
-  # SEE http://gis-lab.info/forum/viewtopic.php?f=35&t=11606&st=0&sk=t&sd=a&start=10000#p72057
-  #if mode == 'max':
-    #geom_list = [-1]
-  #elif mode == 'min':
-    #geom_list = [L]
-  #for item in intersec:
-    #l = item.length()
-    #if l != 0:
-      #geom_list.append(l)
+  if mode2 == 'abs':
+    intersec = m_line.intersection(polygon)
+    length = intersec.length()
 
-  #if mode == "max":
-    #length = max(geom_list)
-    #if length is None:
-      #length = 0
-  #elif mode == "min":
-    #length = min(geom_list)
+  #THIS PART IS FOR THE TIME WHEN THE ISSUE WITH REDUNDANT MULTIGEOMETRY WILL BE SOLVED
+  #SEE http://gis-lab.info/forum/viewtopic.php?f=35&t=11606&st=0&sk=t&sd=a&start=10000#p72057
+  elif mode2 == 'rel': # works poor for "byVertex" algorithm! See comment above
+    intersec = m_line.intersection(polygon).asGeometryCollection() # SEE COMMENT ABOVE
+    if mode == 'max':
+      geom_list = [-1]
+    elif mode == 'min':
+      geom_list = [L]
+    for item in intersec:
+      l = item.length()
+      if l != 0:
+        geom_list.append(l)
+    if mode == "max":
+      length = max(geom_list)
+      if length is None:
+        length = 0
+    elif mode == "min":
+      length = min(geom_list)
 
   return length
 
@@ -316,11 +324,16 @@ def main():
   Returns input file with a specified column containing polygons widths
   according to the input parameters: azimuth, mode, algorithm.
   '''
-  if len(sys.argv) not in [6, 7, 8]:
-    print 'USAGE: ./width.py [file to analyse] [field to store values (will be created if not exist)] [azimuth] [mode] [algorithm] [step]\ne.g.: .python ./width.py poly.shp width 285 max Mix 1'
+  if len(sys.argv) not in [7, 8, 9]:
+    print "USAGE: ./width.py [file to analyse] [field to store values (will be created if not exist)] [azimuth (decimal degrees)] [mode ('min' or 'max')] [mode-2 ('abs', or 'rel')] [algorithm ('byStep' or 'byVertex' or 'Mix')] [step (real numver, CRS units; for 'byStep', 'byVertex' and 'Mix' only)]\ne.g.: .python ./width.py poly.shp width 285.8 max abs Mix 1.5"
     sys.exit(1)
 
-  QgsApplication.setPrefixPath("/usr", True) # QGIS initialisation
+  # getting path to QGIS initialisation
+  if sys.platform.startswith('win'):
+    qgis_prefix = os.getenv( "QGISHOME" )
+  else:
+    qgis_prefix = '/usr'
+  QgsApplication.setPrefixPath( qgis_prefix, True)
   QgsApplication.initQgis()
 
   filename = sys.argv[1] # file to analyse
@@ -339,7 +352,13 @@ def main():
     QgsApplication.exitQgis()
     sys.exit(1)
 
-  algorithm = sys.argv[5] # algorithm defines how width will be calculated
+  mode2 = sys.argv[5] # mode defines returned pattern of width
+  if mode2 not in ['abs', 'rel']:
+    print "Invalid mode-2! Only 'abs' and 'rel' are accepted!"
+    QgsApplication.exitQgis()
+    sys.exit(1)
+
+  algorithm = sys.argv[6] # algorithm defines how width will be calculated
   if algorithm not in ['byVertex', 'byStep', 'Mix']:
     print "Invalid algorithm! Must be 'byVertex', 'byStep' or 'Mix'!"
     QgsApplication.exitQgis()
@@ -348,8 +367,8 @@ def main():
   if algorithm == 'byVertex' and mode == 'min':
     print "Caution! Mode 'min' in 'byVertex' will not provide actual minimum width value! For much more precise result use 'byStep' or 'Mix' instead."
 
-  if algorithm in ['byStep', 'Mix']: # step is only needed by 'byStep' algorithm
-    step = float(sys.argv[6])
+  if algorithm in ['byStep', 'Mix']: # step is only needed by 'byStep' and 'Mix' algorithms
+    step = float(sys.argv[7])
     if step <= 0 or step is None:
       print "Invalid step! Step must be greater then 0!"
       QgsApplication.exitQgis()
@@ -357,10 +376,10 @@ def main():
   elif algorithm == 'byVertex':
     step = ""
 
-  azimuthWidth(filename, field_name, azimuth, algorithm, step, mode)
+  azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2)
   QgsApplication.exitQgis()
 
-  sys.exit(1)
+  sys.exit(0)
 
 if __name__ == '__main__':
   main()
