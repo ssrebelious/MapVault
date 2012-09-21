@@ -4,7 +4,7 @@
 '''
 ******************   ABOUT   ***********************************************************
 
-This is Azimuth-Width script. It is designed to compute minimum or maximum width
+This is Azimuth-Width utility. It is designed to compute minimum or maximum width
 of the given polygon(s) in the given direction. Corresponding QGIS plugin coming soon...
 
 ########################################################################################
@@ -18,17 +18,19 @@ Prereqirements:
                     of this file have valid path to QGIS installation. If not - modify "qgis_prefix"
                     to set correct value. It is "/usr" now - must work in 99% of cases.
 
-General usage: copy script to directory with a shh-file containing polygons.
+General usage: copy width.py to the directory with a shh-file containing polygons.
 Using console navigate to the directory. In console type:
-  python ./width.py [file to analyse] [field to store values] [azimuth (decimal degrees)] [mode ('min' or 'max')] [mode-2 ('abs', or 'rel')] [algorithm ('byStep' or 'byVertex' or 'Mix')] [step (real numver, CRS units; for 'byStep', 'byVertex' and 'Mix' only)]
-  E.G.:~> python ./width.py poly.shp width 285.9 max abs Mix 1.3
-Where: ./width.py - name of this script file
-      [file to analyse] - polygonal shp-file
+  python ./width.py [file to analyse] [field to store values] [azimuth (decimal degrees)] [mode ('min' or 'max')] [mode-2 ('abs', or 'rel')] [algorithm ('byStep' or 'byVertex' or 'Mix')] [step (real numver, CRS units; for 'byStep' and 'Mix' only)]
+  E.G.:~> python ./width.py poly.shp width 285.9 max abs byVertex 1.3
+Where: ./width.py - name of this utility file.
+      [file to analyse] - a shp-file with polygons to analyse.
       [field to store values] - if it does not exist it will be created
       [azimuth] - a direction for width calculation. Take decimal values from 0 to 360
       [mode] - type of width to calculate. Currently 'min' (returns minimum width value
                in given direction) and 'max' (returns maximum value in given direction)
-               modes are available.
+               modes are available. Mode 'min' used with 'byVertex' algorithm will return
+               minimum polygon width different then 0.0. This will be different (greatly most time)
+                to 'min' mode and 'byStep' or 'Mix' algorithm.
       [mode-2] - if polygon is not convex it may have several segments in given direction.
                  If you want to take sum of the segments of the result - use 'abs', if you want
                  only the longest (shortest) segment - use 'rel'. Note that currently
@@ -43,7 +45,8 @@ Where: ./width.py - name of this script file
                       will be faster and more precise using 'max' mode then "byStep"
                       algorithm. But this algorithm is not suitable for 'min' mode.
                     "Mix" algorithm will use both "byVertex" and "byStep" algorithm
-                      so it will be most precise but will consume more time.
+                      so in some cases it will be most precise but will consume evern more time
+                      than 'byStep'.
       [step] - step for "byStep" and "Mix" algorithm. Takes decimal values in
                shp-file CRS units. Lower step means more precision but more
                computation time.
@@ -64,9 +67,9 @@ Where: ./width.py - name of this script file
 
 ******************   COPYRIGHT  ********************************************************
 
-copyright:  © 2012 Yury V. Ryabov
-e-mail:    riabovvv@gmail.com
-web-page:  http://ssrebelious.blogspot.com/2012/09/azimuth-width-script.html
+copyright:         © 2012 Yury V. Ryabov
+e-mail:            riabovvv@gmail.com
+utility web-page:  http://ssrebelious.blogspot.com/2012/09/azimuth-width-script.html
 
 ########################################################################################
 
@@ -331,6 +334,8 @@ def main():
   # getting path to QGIS initialisation
   if sys.platform.startswith('win'):
     qgis_prefix = os.getenv( "QGISHOME" )
+    if qgis_prefix is None:
+      sys.exit("'QGISHOME' path was not detected! \nInstall QGIS or consider script modification (provide a valid path for 'qgis_prefix' variable) or contact the author of this utility.")
   else:
     qgis_prefix = '/usr'
   QgsApplication.setPrefixPath( qgis_prefix, True)
