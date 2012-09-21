@@ -24,8 +24,8 @@ Using console navigate to the directory. In console type:
   E.G.:~> python ./width.py poly.shp width 285.9 max abs byVertex 1.3
 Where: ./width.py - name of this utility file.
       [file to analyse] - a shp-file with polygons to analyse.
-      [field to store values] - if it does not exist it will be created
-      [azimuth] - a direction for width calculation. Take decimal values from 0 to 360
+      [field to store values] - if it does not exist it will be created.
+      [azimuth] - a direction for width calculation. Accepts decimal degrees from 0 to 360.
       [mode] - type of width to calculate. Currently 'min' (returns minimum width value
                in given direction) and 'max' (returns maximum value in given direction)
                modes are available. Mode 'min' used with 'byVertex' algorithm will return
@@ -33,8 +33,11 @@ Where: ./width.py - name of this utility file.
                 to 'min' mode and 'byStep' or 'Mix' algorithm.
       [mode-2] - if polygon is not convex it may have several segments in given direction.
                  If you want to take sum of the segments of the result - use 'abs', if you want
-                 only the longest (shortest) segment - use 'rel'. Note that currently
-                 'byVertex' algorithm will provide incorrect
+                 only the longest (shortest) segment - use 'rel'. Note that currently 'rel' mode-2
+                 sometimes will provide incorrect results for non-convex polygons and for c
+                 onvex polygons with redundant vertices on its edges. This issue will be solved
+                 when the behaviour of the intersection() command will be changed or when I will
+                 implement a workaround for it.
       [algorithm] - algorithm that will be used: 'byStep', 'byVertex', 'Mix'.
                     "byStep" algorithm will take provided step (shp-file CRS units)
                       and swipe the polygons with it by line. Precision depends on the step.
@@ -45,7 +48,7 @@ Where: ./width.py - name of this utility file.
                       will be faster and more precise using 'max' mode then "byStep"
                       algorithm. But this algorithm is not suitable for 'min' mode.
                     "Mix" algorithm will use both "byVertex" and "byStep" algorithm
-                      so in some cases it will be most precise but will consume evern more time
+                      so in some cases it will be most precise but will consume even more time
                       than 'byStep'.
       [step] - step for "byStep" and "Mix" algorithm. Takes decimal values in
                shp-file CRS units. Lower step means more precision but more
@@ -56,7 +59,8 @@ Where: ./width.py - name of this utility file.
 ******************   TIPS AND TRICKS   *************************************************
 
 1. Use Equal Area projections.
-2. If you have a large variety in polygons area e.g. a continent and an island
+2. 'byStep' algorithm should be faster when polygon have enormous number of vertices.
+3. If you have a large variety in polygons area e.g. a continent and an island
    to save computation time you may define big step (like 1000 m or so) to swipe
    through continent faster. It will save computation time and a width for the small
    island will be calculated even if step is grater then any side of island's' Bounding
