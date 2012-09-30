@@ -100,7 +100,7 @@ from PyQt4.QtCore import *
 
 
 
-def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2, ):
+def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2):
   '''
   Returns columnl with polygons weights
   '''
