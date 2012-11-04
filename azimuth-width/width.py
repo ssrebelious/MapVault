@@ -16,12 +16,12 @@ Prereqirements:
                 2. QGIS have to be in PYTHONPATH. See: http://qgis.org/pyqgis-cookbook/intro.html
                 3. If you are non-Windows user ensure that command "QgsApplication.setPrefixPath( qgis_prefix, True)"
                     of this file have valid path to QGIS installation. If not - modify "qgis_prefix"
-                    to set correct value. It is "/usr" now - must work in 99% of cases.
+          +          to set correct value. It is "/usr" now - must work in 99% of cases.
 
 General usage: copy width.py to the directory with a shh-file containing polygons.
 Using console navigate to the directory. In console type:
   python ./width.py [file to analyse] [field to store values] [azimuth (decimal degrees)] [mode ('min' or 'max')] [mode-2 ('abs', or 'rel')] [algorithm ('byStep' or 'byVertex' or 'Mix')] [step (real numver, CRS units; for 'byStep' and 'Mix' only)]
-  E.G.:~> python ./width.py poly.shp width 285.9 max abs byVertex 1.3
+  E.G.:~> python ./width.py poly.shp width 285.9 max abs byStep 1.2
 Where: ./width.py - name of this utility file.
       [file to analyse] - a shp-file with polygons to analyse.
       [field to store values] - if it does not exist it will be created.
@@ -31,22 +31,18 @@ Where: ./width.py - name of this utility file.
                modes are available. Mode 'min' used with 'byVertex' algorithm will return
                minimum polygon width different then 0.0. This will be different (greatly most time)
                 to 'min' mode and 'byStep' or 'Mix' algorithm.
-      [mode-2] - if polygon is not convex it may have several segments in given direction.
+      [mode-2] - if polygon is not convex it may have several segments in a given direction.
                  If you want to take sum of the segments of the result - use 'abs', if you want
-                 only the longest (shortest) segment - use 'rel'. Note that currently 'rel' mode-2
-                 sometimes will provide incorrect results for non-convex polygons and for c
-                 onvex polygons with redundant vertices on its edges. This issue will be solved
-                 when the behaviour of the intersection() command will be changed or when I will
-                 implement a workaround for it.
+                 only the longest (shortest) segment - use 'rel'.
       [algorithm] - algorithm that will be used: 'byStep', 'byVertex', 'Mix'.
                     "byStep" algorithm will take provided step (shp-file CRS units)
-                      and swipe the polygons with it by line. Precision depends on the step.
+                      and swipe the polygons with it by a line.
                       Speed and precision depends on step - lower step mean more
                       precise result but computation will take more time.
                     "byVertex" will intersect polygon with the line only in vertexes
-                      of the given polygon. For convex polygons this algorithm
-                      will be faster and more precise using 'max' mode then "byStep"
-                      algorithm. But this algorithm is not suitable for 'min' mode.
+                      of the given polygon. Generally this algorithm
+                      will be faster and more precise when using 'max' mode then "byStep"
+                      algorithm. But this algorithm is not that suitable for 'min' mode.
                     "Mix" algorithm will use both "byVertex" and "byStep" algorithm
                       so in some cases it will be most precise but will consume even more time
                       than 'byStep'.
@@ -59,8 +55,9 @@ Where: ./width.py - name of this utility file.
 ******************   TIPS AND TRICKS   *************************************************
 
 1. Use Equal Area projections.
-2. 'byStep' algorithm should be faster when polygon have enormous number of vertices.
-3. If you have a large variety in polygons area e.g. a continent and an island
+2. Make sure your polygons have correct geometry. Otherwise the calculations will be incorrect.
+3. 'byStep' algorithm should be faster when polygon have enormous number of vertices.
+4. If you have a large variety in polygons area e.g. a continent and an island
    to save computation time you may define big step (like 1000 m or so) to swipe
    through continent faster. It will save computation time and a width for the small
    island will be calculated even if step is grater then any side of island's' Bounding
@@ -97,7 +94,6 @@ import os
 from qgis.core import *
 import math
 from PyQt4.QtCore import *
-
 
 
 def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2):
@@ -153,6 +149,7 @@ def azimuthWidth(filename, field_name, azimuth, algorithm, step, mode, mode2):
     if cap & QgsVectorDataProvider.ChangeAttributeValues:
       attrs = { field_id : QVariant(fin_width) }
       layer.dataProvider().changeAttributeValues({ f_id : attrs })
+
     print 'geometry ID: %s | %s width: %s  \n' % (f_id, mode, fin_width)
 
   layer.commitChanges()
@@ -299,23 +296,26 @@ def intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode, mode2):
   A = QgsPoint(x_init, y_init)
   B = QgsPoint(x_new, y_new)
   m_line = QgsGeometry.fromPolyline( [ A, B ] ) # measurement line
-
+  intersec = m_line.intersection(polygon)
   if mode2 == 'abs':
-    intersec = m_line.intersection(polygon)
-    length = intersec.length()
+    if intersec is None:
+      length = 0
+    else:
+      length = intersec.length()
 
-  #THIS PART IS FOR THE TIME WHEN THE ISSUE WITH REDUNDANT MULTIGEOMETRY WILL BE SOLVED
-  #SEE http://gis-lab.info/forum/viewtopic.php?f=35&t=11606&st=0&sk=t&sd=a&start=10000#p72057
-  elif mode2 == 'rel': # works poor for "byVertex" algorithm! See comment above
-    intersec = m_line.intersection(polygon).asGeometryCollection() # SEE COMMENT ABOVE
+  elif mode2 == 'rel':
+    intersec = mergeLines(intersec)
+
     if mode == 'max':
       geom_list = [-1]
     elif mode == 'min':
       geom_list = [L]
+
     for item in intersec:
       l = item.length()
       if l != 0:
         geom_list.append(l)
+
     if mode == "max":
       length = max(geom_list)
       if length is None:
@@ -325,6 +325,128 @@ def intersecLength(L, x_init, y_init, x_new, y_new, polygon, mode, mode2):
 
   return length
 
+
+def mergeLines(mix_geometry):
+  '''
+  Merges lines in in_list if they have common points.
+  # THIS FUNCTION SHOULD BE REMOVED WHEN THE ISSUE
+  # WITH REDUNDANT MULTIGEOMETRY WILL BE SOLVED
+  # SEE http://gis-lab.info/forum/viewtopic.php?f=35&t=11606&st=0&sk=t&sd=a&start=10000#p72057
+  '''
+  out_list = None
+  in_list = [] # stringlines as polylines
+  line_list = [] # the same stringlines but as features
+  if mix_geometry is None:
+    out_list = []
+  else:
+    intersec = mix_geometry.asGeometryCollection()
+    for geometry in xrange(len(intersec)):
+      feature = intersec[geometry]
+      g_type = feature.wkbType()
+      if g_type == 1: # if geometry is a point
+        pass
+      elif g_type == 2: # if geometry is a linestring
+        in_list.append(feature.asPolyline())
+        line_list.append(feature)
+      else:
+        QgsApplication.exitQgis()
+        sys.exit('unexpected shit in geometry collection: geometry type = %d') % (g_type)
+
+    check_list = []
+    for i in in_list:
+      for t in i:
+        t = point2tuple(t)
+        check_list.append(t)
+    if len(check_list) == len( list( set(check_list) ) ): # indicates that there are no intersections (all points are unique)
+      out_list = line_list
+    else:
+      if out_list is None:
+        out_list = []
+
+      dict_of_lines = {} # key = tuple of verex coordinates, value = line position in in_list
+      dict_of_intersections = {} # indicates stringlines that have intersections with others(key = position of the stringline in in_list, value = foo)
+      merge_list = [] # list of tuples of stringlines positions of stringlines in in_list to be merged
+      for i in xrange(len(in_list)): # for stringlines coordinates lists
+        for t in in_list[i]: # for tuple in stringlines
+          t = point2tuple(t)
+          if not t in dict_of_lines:
+            dict_of_lines[t] = i
+          else:
+            line_1 = dict_of_lines[t] # position of the first stringline in in_list
+            line_2 = i                # position of the second stringline in in_list
+            merge = (line_1, line_2)
+            merge_list.append(merge)
+            dict_of_intersections[line_1] = 'foo'
+            dict_of_intersections[line_2] = 'foo'
+      for i in xrange(len(in_list)):#for ii in merge_list: # fiiling in stringlines that has no intersections with others
+        if i not in dict_of_intersections:
+          out_list.append(in_list[i])
+        else:
+          continue
+
+      # creation list of lists of stringlines positions in in_list to be merged
+      # a dictionary will point from line position in in_list to list in list of list (merge_list_2)
+      merge_dict = {} # key = in_list[i], value = merge_list_2[j]
+      merge_list_2 = [] # [[0,1], [2,3,4]...]
+      for couple in merge_list:
+        key_1 = couple[0]
+        key_2 = couple[1]
+        if key_2 not in merge_dict and key_2 not in merge_dict:
+          value = len(merge_list_2)
+          merge_list_2.append([key_1, key_2])
+          merge_dict[key_1] = value
+          merge_dict[key_2] = value
+        else: # TODO: try to rewrite following using additional function
+          if key_1 in merge_dict:
+            place = merge_dict[key_1]
+            merge_list_2[place] = merge_list_2[place] + key_2
+            merge_dict[key_2] = place
+          elif key_2 in merge_dict:
+            place = merge_dict[key_2]
+            merge_list_2[place] = merge_list_2[place] + key_1
+            merge_dict[key_1] = place
+
+      # merge lines mentioned in lists in merge_list_2
+      # TODO: this needs revision for possible performance improvement
+      for li in merge_list_2:
+        p_list = []
+        fin_list = []
+        del_dic = {}
+        dic = {}
+        for ind in li:
+          tup_list = in_list[ind]
+          for point in tup_list:
+            value = len(p_list)
+            key = point2tuple(point)
+            if key not in dic: # desighned for deletion of common points from p_list, but anoser approach is used to fill in fin_list. Consider revision.
+              p_list.append(key)
+              dic[key] = value
+            else:
+              del_dic[key] = 'delete this'
+        for point in p_list:
+          if point not in del_dic:
+            fin_list.append(QgsPoint(point[0], point[1]))
+          else:
+            continue
+        # check number of points in fin_lisst - there must be only 2 of them
+        if len(fin_list) == 2:
+          string_line = QgsGeometry.fromPolyline(fin_list)
+          out_list.append(string_line)
+        else:
+          error = 'straight_lines() created invalid line! len(fin_list) = %d' % (len(fin_list))
+          QgsApplication.exitQgis()
+          sys.exit(error)
+
+  return out_list
+
+
+def point2tuple(QgsPoint):
+  '''
+  Converts QgsPoint object to a tuple
+  '''
+  x = QgsPoint.x()
+  y = QgsPoint.y()
+  return (x, y)
 
 def main():
   '''
