@@ -16,7 +16,7 @@ Prereqirements:
                 2. QGIS have to be in PYTHONPATH. See: http://qgis.org/pyqgis-cookbook/intro.html
                 3. If you are non-Windows user ensure that command "QgsApplication.setPrefixPath( qgis_prefix, True)"
                     of this file have valid path to QGIS installation. If not - modify "qgis_prefix"
-          +          to set correct value. It is "/usr" now - must work in 99% of cases.
+                    to set correct value. It is "/usr" now - must work in 99% of cases.
 
 General usage: copy width.py to the directory with a shh-file containing polygons.
 Using console navigate to the directory. In console type:
